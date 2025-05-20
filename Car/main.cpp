@@ -2,9 +2,11 @@
 #include<conio.h>
 #include<Windows.h>
 #include<thread>
+#include<chrono>
 using std::cin;
 using std::cout;
 using std::endl;
+using namespace std::chrono_literals;
 
 #define Escape	27
 #define Enter	13
@@ -127,6 +129,7 @@ class Car
 	struct
 	{
 		std::thread panel_thread;
+		std::thread engine_idle_thread;
 	}threads_container;	//Ёта структура не имеет имени и реализует только один жкземпл€р
 public:
 	Car(double consumption, int capacity, int max_speed = 250) :
@@ -160,12 +163,27 @@ public:
 		system("CLS");
 		cout << "You are out of the Car" << endl;
 	}
+	void start()
+	{
+		if (tank.get_fuel_level())
+		{
+			engine.start();
+			threads_container.engine_idle_thread = std::thread(&Car::engine_idle, this);
+		}
+	}
+	void stop()
+	{
+		engine.stop();
+		if (threads_container.engine_idle_thread.joinable())
+			threads_container.engine_idle_thread.join();
+	}
 	void control()
 	{
 		char key = 0;
 		do
 		{
-			key = _getch();
+			key = 0;
+			if (_kbhit())key = _getch();
 			switch (key)
 			{
 			case Enter:
@@ -174,20 +192,41 @@ public:
 			case 'F':case'f':
 				double fuel;
 				cout << "¬ведите обьем топлива: "; cin >> fuel;
+
 				tank.fill(fuel);
 				break;
+			case 'I':case'i':
+				if (driver_inside)!engine.started() ? start() : stop();
+				break;
 			case Escape:
+				stop();
 				get_out();
 			}
+			if (tank.get_fuel_level() <= 0)stop();	
 		} while (key != Escape);
 		//Concutent execution
+	}
+	void engine_idle()
+	{
+		while (engine.started() && tank.give_fuel(engine.get_consumption_per_second()))
+		{
+			std::this_thread::sleep_for(1s);
+		}
 	}
 	void panel()
 	{
 		while (driver_inside)
 		{
 			system("CLS");
-			cout << "Fuel level: " << tank.get_fuel_level() << " liters\n";
+			cout << "Fuel level: " << tank.get_fuel_level() << " liters";
+			if (tank.get_fuel_level() < 5)
+			{
+				HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+				SetConsoleTextAttribute(hConsole, 0xCF);
+				cout << " LOW FUEL ";
+				SetConsoleTextAttribute(hConsole, 0x07);
+			}
+			cout << endl;
 			cout << "Engine is " << (engine.started() ? "started " : "stopped") << endl;
 			cout << "Speed:\t" << speed << " km/h\n";
 			Sleep(100);
